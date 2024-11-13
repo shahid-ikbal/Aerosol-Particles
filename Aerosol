@@ -1,0 +1,104 @@
+// Define the region of interest (Pakistan and India boundary box)
+var region = ee.Geometry.Rectangle([68, 20, 90, 37]);
+
+// Define date range
+var startDate = '2023-10-01';
+var endDate = '2023-10-31';
+
+// Load Sentinel-5P NO2 data
+var no2 = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_NO2')
+            .select('NO2_column_number_density')
+            .filterDate(startDate, endDate)
+            .filterBounds(region)
+            .mean(); // Average NO2 over time period
+
+// Load Sentinel-5P SO2 data
+var so2 = ee.ImageCollection('COPERNICUS/S5P/NRTI/L3_SO2')
+            .select('SO2_column_number_density')
+            .filterDate(startDate, endDate)
+            .filterBounds(region)
+            .mean(); // Average SO2 over time period
+
+// Load MODIS MCD19A2 aerosol optical depth data
+var aerosol = ee.ImageCollection('MODIS/006/MCD19A2_GRANULES')
+                .select('Optical_Depth_055')
+                .filterDate(startDate, endDate)
+                .filterBounds(region)
+                .mean(); // Average aerosol optical depth over time period
+
+// Load ERA5 wind data (10m U and V wind components)
+var wind = ee.ImageCollection('ECMWF/ERA5_LAND/HOURLY')
+             .select(['u_component_of_wind_10m', 'v_component_of_wind_10m'])
+             .filterDate(startDate, endDate)
+             .filterBounds(region)
+             .mean(); // Average wind vectors over time period
+
+// Calculate wind speed from U and V components
+var windSpeed = wind.expression(
+  'sqrt(pow(u, 2) + pow(v, 2))', {
+    'u': wind.select('u_component_of_wind_10m'),
+    'v': wind.select('v_component_of_wind_10m')
+  }).rename('windSpeed');
+
+// Visualize NO2, SO2, aerosol, and wind speed layers
+var no2Vis = {min: 0, max: 0.0002, palette: ['black', 'purple', 'blue', 'green', 'yellow', 'red']};
+var so2Vis = {min: 0, max: 0.0005, palette: ['black', 'purple', 'blue', 'green', 'yellow', 'red']};
+var aerosolVis = {min: 0, max: 1, palette: ['white', 'yellow', 'orange', 'red', 'darkred']};
+var windSpeedVis = {min: 0, max: 20, palette: ['lightblue', 'blue', 'purple']};
+
+// Add the layers to the map
+Map.centerObject(region, 5);
+Map.addLayer(no2.clip(region), no2Vis, 'NO2 Concentration');
+Map.addLayer(so2.clip(region), so2Vis, 'SO2 Concentration');
+Map.addLayer(aerosol.clip(region), aerosolVis, 'Aerosol Optical Depth');
+Map.addLayer(windSpeed.clip(region), windSpeedVis, 'Wind Speed');
+
+// Add legend using GEE UI components
+var legend = ui.Panel({
+  style: {
+    position: 'bottom-left',
+    padding: '8px 15px'
+  }
+});
+
+var legendTitle = ui.Label({
+  value: 'Pollutant Concentrations and Wind Speed',
+  style: {fontWeight: 'bold', fontSize: '16px'}
+});
+
+legend.add(legendTitle);
+
+// Define color bar for NO2, SO2, aerosol, and wind speed
+var makeColorBar = function(palette, min, max) {
+  return ui.Thumbnail({
+    image: ee.Image.pixelLonLat().select(0),
+    params: {
+      bbox: [0, 0, 1, 0.1],
+      dimensions: '100x10',
+      format: 'png',
+      min: min,
+      max: max,
+      palette: palette
+    },
+    style: {stretch: 'horizontal', margin: '0px 8px'}
+  });
+};
+
+// NO2 Legend
+legend.add(ui.Label('NO2 (mol/m²)'));
+legend.add(makeColorBar(no2Vis.palette, no2Vis.min, no2Vis.max));
+
+// SO2 Legend
+legend.add(ui.Label('SO2 (mol/m²)'));
+legend.add(makeColorBar(so2Vis.palette, so2Vis.min, so2Vis.max));
+
+// Aerosol Legend
+legend.add(ui.Label('Aerosol Optical Depth'));
+legend.add(makeColorBar(aerosolVis.palette, aerosolVis.min, aerosolVis.max));
+
+// Wind Speed Legend
+legend.add(ui.Label('Wind Speed (m/s)'));
+legend.add(makeColorBar(windSpeedVis.palette, windSpeedVis.min, windSpeedVis.max));
+
+// Add the legend to the map
+Map.add(legend);
